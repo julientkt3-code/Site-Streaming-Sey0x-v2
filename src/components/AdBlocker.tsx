@@ -141,24 +141,7 @@ const AdBlocker: React.FC = () => {
     };
     window.addEventListener('message', handleMessage, true);
 
-    // 8. Patcher les iframes existantes : retirer allow-top-navigation
-    const patchIframes = () => {
-      document.querySelectorAll('iframe').forEach((iframe) => {
-        if (!iframe.hasAttribute('sandbox')) {
-          iframe.setAttribute('sandbox',
-            'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock');
-        } else {
-          const sandbox = iframe.getAttribute('sandbox') || '';
-          const patched = sandbox.split(' ')
-            .filter(s => s !== 'allow-top-navigation' && s !== 'allow-top-navigation-by-user-activation')
-            .join(' ');
-          iframe.setAttribute('sandbox', patched);
-        }
-      });
-    };
-    patchIframes();
-    const iframeObserver = new MutationObserver(patchIframes);
-    iframeObserver.observe(document.body, { childList: true, subtree: true });
+    // (sandbox retiré volontairement pour compatibilité lecteurs)
 
     // 9. Empêcher le blur/focus trick utilisé par les pubs mobiles
     const refocusPage = () => setTimeout(() => window.focus(), 0);
@@ -174,7 +157,6 @@ const AdBlocker: React.FC = () => {
       window.removeEventListener('message', handleMessage, true);
       window.removeEventListener('blur', refocusPage, true);
       observer.disconnect();
-      iframeObserver.disconnect();
     };
   }, []);
 
