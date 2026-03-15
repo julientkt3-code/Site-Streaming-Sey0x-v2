@@ -122,7 +122,7 @@ const Watch: React.FC = () => {
       <div className="pt-16 pb-10 w-full">
         {/* Player Container */}
         <div className="w-full bg-black">
-          <div className="aspect-video max-w-7xl mx-auto relative">
+          <div className="aspect-video max-w-7xl mx-auto">
             <iframe
               src={watchUrl}
               className="w-full h-full"
@@ -130,14 +130,16 @@ const Watch: React.FC = () => {
               allowFullScreen
               title={title}
             ></iframe>
+          </div>
+        </div>
 
-            {/* Bouton serveur suivant — discret, en bas à droite du player */}
-            <div className="absolute bottom-3 right-3 z-10">
-              <AutoServerButton
-                currentProvider={provider}
-                onProviderChange={setProvider}
-              />
-            </div>
+        {/* Bouton changer de serveur — sous le lecteur, accès facile sans gêner le grand écran */}
+        <div className="w-full bg-black/80 border-t border-white/10">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-2 flex justify-end">
+            <AutoServerButton
+              currentProvider={provider}
+              onProviderChange={setProvider}
+            />
           </div>
         </div>
         

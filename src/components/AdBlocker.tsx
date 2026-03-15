@@ -1,122 +1,184 @@
 import { useEffect } from 'react';
 
-/**
- * AdBlocker — bloque les popups, redirections et nouvelles fenêtres
- * déclenchées par les iframes de streaming (vidsrc, embed.su, etc.)
- */
+// ============================================================
+// DNS / domaines publicitaires bloqués (liste étendue)
+// ============================================================
+const BLOCKED_DOMAINS = [
+  'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
+  'adservice.google.com', 'pagead2.googlesyndication.com',
+  'adnxs.com', 'rubiconproject.com', 'pubmatic.com', 'openx.net',
+  'casalemedia.com', 'criteo.com', 'adsrvr.org', 'moatads.com',
+  'advertising.com', 'adbrite.com', 'adform.net', 'adroll.com',
+  'outbrain.com', 'taboola.com', 'revcontent.com', 'mgid.com',
+  'sharethrough.com', 'triplelift.com', 'sovrn.com', 'contextweb.com',
+  'smartadserver.com', 'appnexus.com', 'indexexchange.com',
+  'lkqd.net', 'spotxchange.com', 'springserve.com', 'teads.tv',
+  'yieldmo.com', '33across.com', 'rhythmone.com', 'undertone.com',
+  'conversantmedia.com', 'dotomi.com', 'bidswitch.net', 'lijit.com',
+  'media.net', 'adsymptotic.com', 'adtrue.com', 'cdn.adnxs.com',
+  'scorecardresearch.com', 'quantserve.com', 'bluekai.com',
+  'exelator.com', 'turn.com', 'eyeota.net',
+  'clickadu.com', 'popcash.net', 'popads.net', 'adcash.com',
+  'propellerads.com', 'hilltopads.net', 'trafficjunky.net',
+  'exoclick.com', 'juicyads.com', 'trafficforce.com', 'plugrush.com',
+  'adspyglass.com', 'adxpansion.com', 'ero-advertising.com',
+  'tsyndicate.com', 'traffic-media.co', 'trafficshop.com',
+  'adcolony.com', 'applovin.com', 'vungle.com', 'mocopay.net',
+  'realsrv.com', 'tmia.com', 'adtng.com',
+];
+
+const BLOCKED_URL_PATTERNS = [
+  /\/ads?\//i, /\/banner/i, /\/popup/i, /\/popunder/i,
+  /\/redirect/i, /\/clickthrough/i, /\/affiliate/i,
+  /adclick/i, /adserv/i, /adtech/i, /adnetwork/i,
+  /tracking/i, /go\.php\?/i, /out\.php\?/i, /click\.php\?/i,
+];
+
+const isDomainBlocked = (url: string): boolean => {
+  try {
+    const u = new URL(url);
+    const hostname = u.hostname.toLowerCase();
+    return BLOCKED_DOMAINS.some(d => hostname.includes(d.toLowerCase())) ||
+           BLOCKED_URL_PATTERNS.some(p => p.test(url));
+  } catch {
+    return BLOCKED_URL_PATTERNS.some(p => p.test(url));
+  }
+};
+
 const AdBlocker: React.FC = () => {
   useEffect(() => {
-    // 1. Bloquer window.open (méthode la plus courante pour les pubs)
+    // 1. Bloquer TOUT window.open — aucune exception
     const originalOpen = window.open;
-    window.open = function(url?: string | URL, target?: string, ...args: any[]) {
-      // Autoriser uniquement les ouvertures depuis notre propre code (sans url = popup bloqué)
-      if (!url) return null;
-      const urlStr = url.toString();
-      // Bloquer les URLs suspectes de pub
-      const adPatterns = [
-        /doubleclick\.net/i,
-        /googlesyndication/i,
-        /adservice/i,
-        /pagead/i,
-        /popup/i,
-        /popunder/i,
-        /redirect/i,
-        /ad\./i,
-        /ads\./i,
-        /banner/i,
-        /click\.php/i,
-        /track\./i,
-        /tracking/i,
-        /affiliate/i,
-      ];
-      if (adPatterns.some(p => p.test(urlStr))) {
-        console.log('[AdBlocker] Popup bloqué:', urlStr);
-        return null;
-      }
-      // Bloquer les nouvelles fenêtres qui ne viennent pas d'un clic utilisateur direct
-      if (target === '_blank' || target === '_new') {
-        console.log('[AdBlocker] Nouvelle fenêtre bloquée:', urlStr);
-        return null;
-      }
-      return originalOpen.call(window, url, target, ...args);
+    window.open = function() {
+      console.log('[AdBlocker] window.open bloqué');
+      return null;
     };
 
-    // 2. Intercepter les tentatives de navigation (beforeunload / unload des iframes)
-    const blockNavigation = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = '';
+    // 2. Bloquer history navigation vers domaines pub
+    const originalPushState = history.pushState.bind(history);
+    const originalReplaceState = history.replaceState.bind(history);
+    history.pushState = function(state, title, url?: string | URL | null) {
+      if (url && isDomainBlocked(url.toString())) { console.log('[AdBlocker] pushState bloqué'); return; }
+      return originalPushState(state, title, url);
+    };
+    history.replaceState = function(state, title, url?: string | URL | null) {
+      if (url && isDomainBlocked(url.toString())) { console.log('[AdBlocker] replaceState bloqué'); return; }
+      return originalReplaceState(state, title, url);
     };
 
-    // 3. Surveiller les nouvelles iframes ajoutées dynamiquement par les pubs
+    // 3. Bloquer beforeunload (empêche sortie de page)
+    const blockUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; return ''; };
+    window.addEventListener('beforeunload', blockUnload, true);
+
+    // 4. Bloquer les clics sur liens externes publicitaires (PC)
+    const blockExternalClicks = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null;
+      if (anchor?.href && isDomainBlocked(anchor.href)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        console.log('[AdBlocker] Clic pub bloqué:', anchor.href);
+      }
+    };
+    document.addEventListener('click', blockExternalClicks, true);
+
+    // 5. Bloquer les touches mobiles sur liens pub
+    const blockTouchOnAds = (e: TouchEvent) => {
+      const anchor = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null;
+      if (anchor?.href && isDomainBlocked(anchor.href)) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        console.log('[AdBlocker] Touch pub bloqué');
+      }
+    };
+    document.addEventListener('touchstart', blockTouchOnAds, { capture: true, passive: false });
+
+    // 6. MutationObserver — supprimer iframes/scripts/overlays pub injectés
     const observer = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
-          if (node instanceof HTMLElement) {
-            // Supprimer les iframes de pub cachées
-            const iframes = node.querySelectorAll ? node.querySelectorAll('iframe') : [];
-            iframes.forEach((iframe) => {
-              const src = iframe.src || '';
-              const adDomains = [
-                'doubleclick.net', 'googlesyndication.com', 'googleadservices.com',
-                'adnxs.com', 'rubiconproject.com', 'pubmatic.com', 'openx.net',
-                'casalemedia.com', 'criteo.com', 'adsrvr.org', 'moatads.com',
-              ];
-              if (adDomains.some(d => src.includes(d))) {
-                iframe.remove();
-                console.log('[AdBlocker] Iframe pub supprimée:', src);
-              }
-            });
+          if (!(node instanceof HTMLElement)) return;
 
-            // Supprimer les overlays/popups de pub (divs positionnés fixed/absolute)
-            if (node instanceof HTMLDivElement || node instanceof HTMLDivElement) {
-              const style = window.getComputedStyle(node);
-              if (
-                (style.position === 'fixed' || style.position === 'absolute') &&
-                (style.zIndex && parseInt(style.zIndex) > 9999)
-              ) {
-                const rect = node.getBoundingClientRect();
-                // Si c'est un grand overlay
-                if (rect.width > window.innerWidth * 0.5 && rect.height > window.innerHeight * 0.5) {
-                  node.remove();
-                  console.log('[AdBlocker] Overlay pub supprimé');
-                }
-              }
+          // Iframes pub
+          if (node instanceof HTMLIFrameElement && isDomainBlocked(node.src || '')) {
+            node.remove(); console.log('[AdBlocker] iframe pub supprimée'); return;
+          }
+          node.querySelectorAll?.('iframe').forEach((iframe) => {
+            if (isDomainBlocked(iframe.src || '')) { iframe.remove(); }
+          });
+
+          // Scripts pub
+          if (node instanceof HTMLScriptElement && isDomainBlocked(node.src || '')) {
+            node.remove(); console.log('[AdBlocker] script pub supprimé'); return;
+          }
+
+          // Overlays/popups (fixed/absolute avec z-index > 1000 et grande taille)
+          const style = window.getComputedStyle(node);
+          const zIndex = parseInt(style.zIndex || '0', 10);
+          if ((style.position === 'fixed' || style.position === 'absolute') && zIndex > 1000) {
+            const rect = node.getBoundingClientRect();
+            const isBigOverlay = rect.width > window.innerWidth * 0.3 && rect.height > window.innerHeight * 0.3;
+            const isOurUI = node.closest('[data-radix-portal]') || node.closest('[data-radix-dialog-content]');
+            if (isBigOverlay && !isOurUI) {
+              node.remove(); console.log('[AdBlocker] overlay pub supprimé');
             }
           }
         });
       });
     });
+    observer.observe(document.body, { childList: true, subtree: true });
 
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-
-    // 4. Bloquer les messages postMessage malveillants des iframes
+    // 7. Bloquer postMessage malveillants des iframes
+    const AD_MESSAGE_KEYWORDS = ['popup', 'popunder', 'redirect', 'ad_click', 'openurl',
+      'open_url', 'navigate_to', 'newwindow', 'click_url', 'clickurl', 'adurl'];
     const handleMessage = (event: MessageEvent) => {
       try {
-        const data = event.data;
-        if (typeof data === 'string') {
-          const adKeywords = ['popup', 'redirect', 'ad_click', 'openurl'];
-          if (adKeywords.some(k => data.toLowerCase().includes(k))) {
-            event.stopImmediatePropagation();
-            console.log('[AdBlocker] Message pub bloqué:', data.substring(0, 50));
-          }
+        const content = typeof event.data === 'string'
+          ? event.data.toLowerCase()
+          : JSON.stringify(event.data || '').toLowerCase();
+        if (AD_MESSAGE_KEYWORDS.some(k => content.includes(k))) {
+          event.stopImmediatePropagation();
+          console.log('[AdBlocker] postMessage pub bloqué');
         }
       } catch (_) {}
     };
-
     window.addEventListener('message', handleMessage, true);
 
-    // Cleanup
+    // 8. Patcher les iframes existantes : retirer allow-top-navigation
+    const patchIframes = () => {
+      document.querySelectorAll('iframe').forEach((iframe) => {
+        if (!iframe.hasAttribute('sandbox')) {
+          iframe.setAttribute('sandbox',
+            'allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock');
+        } else {
+          const sandbox = iframe.getAttribute('sandbox') || '';
+          const patched = sandbox.split(' ')
+            .filter(s => s !== 'allow-top-navigation' && s !== 'allow-top-navigation-by-user-activation')
+            .join(' ');
+          iframe.setAttribute('sandbox', patched);
+        }
+      });
+    };
+    patchIframes();
+    const iframeObserver = new MutationObserver(patchIframes);
+    iframeObserver.observe(document.body, { childList: true, subtree: true });
+
+    // 9. Empêcher le blur/focus trick utilisé par les pubs mobiles
+    const refocusPage = () => setTimeout(() => window.focus(), 0);
+    window.addEventListener('blur', refocusPage, true);
+
     return () => {
       window.open = originalOpen;
-      observer.disconnect();
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
+      window.removeEventListener('beforeunload', blockUnload, true);
+      document.removeEventListener('click', blockExternalClicks, true);
+      document.removeEventListener('touchstart', blockTouchOnAds, true);
       window.removeEventListener('message', handleMessage, true);
+      window.removeEventListener('blur', refocusPage, true);
+      observer.disconnect();
+      iframeObserver.disconnect();
     };
   }, []);
 
-  return null; // Ce composant ne rend rien
+  return null;
 };
 
 export default AdBlocker;
