@@ -2,13 +2,10 @@ import { useEffect } from 'react';
 
 const OWN_ORIGIN = window.location.origin;
 
-// Schémas d'app mobile — bloquer immédiatement
 const BAD_SCHEMES = [
-  'intent://','market://','fb://','twitter://','whatsapp://',
-  'tel://','sms://','android-app://','ios-app://','app://',
-  'capacitor://','mms://','viber://','tg://','snapchat://',
-  'instagram://','youtube://','mailto://','itms-apps://',
-  'itms://','maps://','geo:','callto://',
+  'intent://','market://','android-app://','ios-app://','itms-apps://',
+  'itms://','fb://','twitter://','whatsapp://','viber://','tg://',
+  'snapchat://','instagram://','youtube://','callto://','geo:',
 ];
 
 const isBadScheme = (url: string) =>
@@ -26,21 +23,16 @@ const isExternal = (url: string): boolean => {
 const AdBlocker: React.FC = () => {
   useEffect(() => {
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 1 — window.open : ZÉRO exception, ZÉRO nouvel onglet
-    // C'est la porte principale par laquelle la "page intermédiaire" s'ouvre
-    // ══════════════════════════════════════════════════════════
+    // 1. window.open — bloqué totalement
     const origOpen = window.open;
     window.open = () => null;
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 2 — Bloquer les liens <a target="_blank"> et tout lien externe
-    // ══════════════════════════════════════════════════════════
+    // 2. Liens <a> externes / _blank — bloqués sur click ET touch
+    //    IMPORTANT : on ne bloque QUE les liens <a>, pas les taps sur l'iframe elle-même
     const blockLink = (e: Event) => {
       const a = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null;
-      if (!a) return;
+      if (!a) return; // pas un lien → laisser passer (ne pas gêner le lecteur)
       const href = a.href || '';
-      // Bloquer si : lien externe OU _blank OU schéma d'app
       if (isExternal(href) || a.target === '_blank' || a.target === '_new' || isBadScheme(href)) {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -50,59 +42,37 @@ const AdBlocker: React.FC = () => {
     document.addEventListener('touchstart', blockLink, { capture: true, passive: false } as any);
     document.addEventListener('touchend',   blockLink, { capture: true, passive: false } as any);
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 3 — Intercepter location.assign / location.replace / location.href
-    // Les scripts de pub appellent directement ces méthodes
-    // ══════════════════════════════════════════════════════════
+    // 3. location.assign / location.replace
     const origAssign  = location.assign.bind(location);
     const origReplace = location.replace.bind(location);
+    location.assign  = (url: string) => { if (!isExternal(url)) origAssign(url);  };
+    location.replace = (url: string) => { if (!isExternal(url)) origReplace(url); };
 
-    location.assign = (url: string) => {
-      if (isExternal(url)) { console.log('[AB] location.assign bloqué'); return; }
-      origAssign(url);
-    };
-    location.replace = (url: string) => {
-      if (isExternal(url)) { console.log('[AB] location.replace bloqué'); return; }
-      origReplace(url);
-    };
-
-    // Proxy sur window.location.href (écriture)
+    // 4. window.Location.prototype.href (écriture directe)
     try {
-      const locDesc = Object.getOwnPropertyDescriptor(window.Location.prototype, 'href');
-      if (locDesc?.set) {
+      const desc = Object.getOwnPropertyDescriptor(window.Location.prototype, 'href');
+      if (desc?.set) {
         Object.defineProperty(window.Location.prototype, 'href', {
-          ...locDesc,
+          ...desc,
           set(url: string) {
-            if (isExternal(url)) { console.log('[AB] location.href= bloqué'); return; }
-            locDesc.set!.call(this, url);
+            if (isExternal(url)) return;
+            desc.set!.call(this, url);
           },
         });
       }
     } catch (_) {}
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 4 — history.pushState / replaceState
-    // ══════════════════════════════════════════════════════════
-    const origPush    = history.pushState.bind(history);
+    // 5. history push/replace
+    const origPush     = history.pushState.bind(history);
     const origHReplace = history.replaceState.bind(history);
-    history.pushState = (s, t, url?: string | URL | null) => {
-      if (url && isExternal(url.toString())) return;
-      origPush(s, t, url);
-    };
-    history.replaceState = (s, t, url?: string | URL | null) => {
-      if (url && isExternal(url.toString())) return;
-      origHReplace(s, t, url);
-    };
+    history.pushState    = (s, t, url?: string | URL | null) => { if (!url || !isExternal(url.toString())) origPush(s, t, url); };
+    history.replaceState = (s, t, url?: string | URL | null) => { if (!url || !isExternal(url.toString())) origHReplace(s, t, url); };
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 5 — beforeunload : empêche toute sortie de page
-    // ══════════════════════════════════════════════════════════
+    // 6. beforeunload
     const blockUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
     window.addEventListener('beforeunload', blockUnload, true);
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 6 — createElement('a') + .click() programmatique
-    // ══════════════════════════════════════════════════════════
+    // 7. createElement('a') programmatique
     const origCreate = document.createElement.bind(document);
     (document as any).createElement = (tag: string, ...args: any[]) => {
       const el = origCreate(tag, ...args);
@@ -110,67 +80,45 @@ const AdBlocker: React.FC = () => {
         const origClick = el.click.bind(el);
         (el as any).click = () => {
           const a = el as HTMLAnchorElement;
-          if (isExternal(a.href) || a.target === '_blank') return;
-          origClick();
+          if (!isExternal(a.href) && a.target !== '_blank') origClick();
         };
       }
       return el;
     };
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 7 — MutationObserver : supprimer iframes/overlays pub
-    // ══════════════════════════════════════════════════════════
+    // 8. MutationObserver — supprimer iframes/overlays pub injectés
     const AD_HOSTS = [
-      'doubleclick','googlesyndication','adnxs','rubiconproject',
-      'pubmatic','openx','criteo','taboola','outbrain','exoclick',
-      'propellerads','trafficjunky','popcash','popads','adcash',
-      'realsrv','adtng','clickadu','hilltopads','adsterra',
+      'doubleclick','googlesyndication','adnxs','rubiconproject','pubmatic',
+      'openx','criteo','taboola','outbrain','exoclick','propellerads',
+      'trafficjunky','popcash','popads','adcash','realsrv','adtng',
+      'clickadu','hilltopads','adsterra','admaven','bidvertiser',
     ];
     const isAdSrc = (src: string) => {
-      try {
-        const h = new URL(src).hostname;
-        return AD_HOSTS.some(d => h.includes(d));
-      } catch { return false; }
+      try { const h = new URL(src).hostname; return AD_HOSTS.some(d => h.includes(d)); }
+      catch { return false; }
     };
 
     const observer = new MutationObserver((mutations) => {
       for (const m of mutations) {
         for (const node of Array.from(m.addedNodes)) {
           if (!(node instanceof HTMLElement)) continue;
-
-          // Iframes pub
-          if (node instanceof HTMLIFrameElement && isAdSrc(node.src)) {
-            node.remove(); continue;
-          }
-          node.querySelectorAll?.('iframe').forEach(f => {
-            if (isAdSrc((f as HTMLIFrameElement).src)) f.remove();
-          });
-
-          // Scripts pub
-          if (node instanceof HTMLScriptElement && isAdSrc(node.src)) {
-            node.remove(); continue;
-          }
-
-          // Overlays / popups injectés (z-index > 999, grande taille, hors notre UI)
+          if (node instanceof HTMLIFrameElement && isAdSrc(node.src)) { node.remove(); continue; }
+          node.querySelectorAll?.('iframe').forEach(f => { if (isAdSrc((f as HTMLIFrameElement).src)) f.remove(); });
+          if (node instanceof HTMLScriptElement && isAdSrc(node.src)) { node.remove(); continue; }
           if (node.closest('[data-radix-portal]') || node.closest('[role="dialog"]')) continue;
           const cs = window.getComputedStyle(node);
           const zi = parseInt(cs.zIndex || '0', 10);
           if ((cs.position === 'fixed' || cs.position === 'absolute') && zi > 999) {
             const r = node.getBoundingClientRect();
-            if (r.width > window.innerWidth * 0.2 && r.height > window.innerHeight * 0.2) {
-              node.remove();
-            }
+            if (r.width > window.innerWidth * 0.2 && r.height > window.innerHeight * 0.2) node.remove();
           }
         }
       }
     });
     observer.observe(document.body, { childList: true, subtree: true });
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 8 — postMessage entre iframes
-    // ══════════════════════════════════════════════════════════
-    const BAD_MSG = ['popup','popunder','ad_click','openurl','open_url',
-                     'newwindow','click_url','adurl','navigate_to','redirect'];
+    // 9. postMessage
+    const BAD_MSG = ['popup','popunder','ad_click','openurl','open_url','newwindow','click_url','adurl','navigate_to','redirect'];
     const handleMsg = (e: MessageEvent) => {
       try {
         const c = (typeof e.data === 'string' ? e.data : JSON.stringify(e.data ?? '')).toLowerCase();
@@ -179,22 +127,17 @@ const AdBlocker: React.FC = () => {
     };
     window.addEventListener('message', handleMsg, true);
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 9 — Blur trick (mobile : page perd focus = app ouverte)
-    // ══════════════════════════════════════════════════════════
+    // 10. Blur trick
     const refocus = () => setTimeout(() => window.focus(), 50);
     window.addEventListener('blur', refocus, true);
 
-    // ══════════════════════════════════════════════════════════
-    // COUCHE 10 — Garde URL (filet de sécurité, intervalle 100ms)
-    // Si malgré tout la navigation a lieu, on revient immédiatement
-    // ══════════════════════════════════════════════════════════
+    // 11. Garde URL — filet de sécurité
     let lastHref = window.location.href;
     const guard = setInterval(() => {
       const cur = window.location.href;
       if (cur !== lastHref) {
-        if (isExternal(cur)) { history.back(); }
-        else { lastHref = cur; }
+        if (isExternal(cur)) history.back();
+        else lastHref = cur;
       }
     }, 100);
 
@@ -203,8 +146,7 @@ const AdBlocker: React.FC = () => {
       (document as any).createElement = origCreate;
       history.pushState    = origPush;
       history.replaceState = origHReplace;
-      try { location.assign  = origAssign;  } catch (_) {}
-      try { location.replace = origReplace; } catch (_) {}
+      try { location.assign = origAssign; location.replace = origReplace; } catch (_) {}
       window.removeEventListener('beforeunload', blockUnload, true);
       document.removeEventListener('click',      blockLink, true);
       document.removeEventListener('touchstart', blockLink, true);
