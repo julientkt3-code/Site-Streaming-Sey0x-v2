@@ -1,109 +1,63 @@
 import React, { useEffect } from 'react';
 
-const OWN_ORIGIN = (() => { try { return window.location.origin; } catch { return ''; } })();
+// Ce composant complète le script inline de index.html
+// Il gère ce qui ne peut être fait qu'après le montage de React :
+// - Suppression des overlays/iframes pub injectés dynamiquement
+// - postMessage
+// - Garde URL
 
-const BAD_SCHEMES = [
-  'intent://','market://','android-app://','ios-app://','itms-apps://',
-  'itms://','fb://','twitter://','whatsapp://','viber://','tg://',
-  'snapchat://','instagram://','youtube://','callto://','geo:',
+const AD_HOSTS = [
+  'doubleclick','googlesyndication','adnxs','rubiconproject','pubmatic',
+  'openx','criteo','taboola','outbrain','exoclick','propellerads',
+  'trafficjunky','popcash','popads','adcash','realsrv','adtng',
+  'clickadu','hilltopads','adsterra','admaven','bidvertiser',
+  'mgid','outbrain','revcontent','taboola',
 ];
 
-const isBadScheme = (url: string) =>
-  BAD_SCHEMES.some(s => url.toLowerCase().startsWith(s));
-
-const isExternal = (url: string): boolean => {
-  if (!url) return false;
-  try {
-    if (isBadScheme(url)) return true;
-    if (url.startsWith('javascript:') || url.startsWith('data:')) return true;
-    if (url.startsWith('/') || url.startsWith('#') || url.startsWith(OWN_ORIGIN)) return false;
-    return new URL(url, OWN_ORIGIN).origin !== OWN_ORIGIN;
-  } catch { return true; }
+const isAdSrc = (src: string) => {
+  try { const h = new URL(src).hostname; return AD_HOSTS.some(d => h.includes(d)); }
+  catch { return false; }
 };
 
 const AdBlocker: React.FC = () => {
   useEffect(() => {
     const cleanups: (() => void)[] = [];
 
+    // Observer — supprimer les éléments pub injectés dynamiquement
     try {
-      // 1. window.open → null (pour les scripts de notre page)
-      const origOpen = window.open;
-      window.open = () => null;
-      cleanups.push(() => { window.open = origOpen; });
-    } catch (_) {}
-
-    try {
-      // 2. Bloquer liens <a> externes
-      const blockLink = (e: Event) => {
-        try {
-          const a = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null;
-          if (!a) return;
-          const href = a.href || '';
-          if (isExternal(href) || a.target === '_blank' || a.target === '_new') {
-            e.preventDefault();
-            e.stopImmediatePropagation();
-          }
-        } catch (_) {}
-      };
-      document.addEventListener('click', blockLink, true);
-      document.addEventListener('touchstart', blockLink, { capture: true, passive: false } as any);
-      cleanups.push(() => {
-        document.removeEventListener('click', blockLink, true);
-        document.removeEventListener('touchstart', blockLink, true);
-      });
-    } catch (_) {}
-
-    try {
-      // 3. history
-      const origPush    = history.pushState.bind(history);
-      const origReplace = history.replaceState.bind(history);
-      history.pushState    = (s, t, url?: string | URL | null) => { if (!url || !isExternal(url.toString())) origPush(s, t, url); };
-      history.replaceState = (s, t, url?: string | URL | null) => { if (!url || !isExternal(url.toString())) origReplace(s, t, url); };
-      cleanups.push(() => { history.pushState = origPush; history.replaceState = origReplace; });
-    } catch (_) {}
-
-    try {
-      // 4. beforeunload
-      const blockUnload = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
-      window.addEventListener('beforeunload', blockUnload, true);
-      cleanups.push(() => window.removeEventListener('beforeunload', blockUnload, true));
-    } catch (_) {}
-
-    try {
-      // 5. MutationObserver — overlays pub
-      const AD_HOSTS = ['doubleclick','googlesyndication','adnxs','rubiconproject','pubmatic',
-        'openx','criteo','taboola','outbrain','exoclick','propellerads','trafficjunky',
-        'popcash','popads','adcash','realsrv','adtng','clickadu','hilltopads','adsterra'];
-      const isAdSrc = (src: string) => { try { const h = new URL(src).hostname; return AD_HOSTS.some(d => h.includes(d)); } catch { return false; } };
-
       const observer = new MutationObserver((mutations) => {
-        try {
-          for (const m of mutations) {
-            for (const node of Array.from(m.addedNodes)) {
-              if (!(node instanceof HTMLElement)) continue;
-              if (node instanceof HTMLIFrameElement && isAdSrc(node.src)) { node.remove(); continue; }
-              node.querySelectorAll?.('iframe').forEach(f => { if (isAdSrc((f as HTMLIFrameElement).src)) f.remove(); });
-              if (node instanceof HTMLScriptElement && isAdSrc(node.src)) { node.remove(); continue; }
-              if (node.closest?.('[data-radix-portal]') || node.closest?.('[role="dialog"]')) continue;
-              try {
-                const cs = window.getComputedStyle(node);
-                const zi = parseInt(cs.zIndex || '0', 10);
-                if ((cs.position === 'fixed' || cs.position === 'absolute') && zi > 999) {
-                  const r = node.getBoundingClientRect();
-                  if (r.width > window.innerWidth * 0.2 && r.height > window.innerHeight * 0.2) node.remove();
+        for (const m of mutations) {
+          for (const node of Array.from(m.addedNodes)) {
+            if (!(node instanceof HTMLElement)) continue;
+            // Iframes pub
+            if (node instanceof HTMLIFrameElement && isAdSrc(node.src)) { node.remove(); continue; }
+            node.querySelectorAll?.('iframe').forEach(f => {
+              if (isAdSrc((f as HTMLIFrameElement).src)) f.remove();
+            });
+            // Scripts pub
+            if (node instanceof HTMLScriptElement && isAdSrc(node.src)) { node.remove(); continue; }
+            // Overlays plein écran (z > 999, hors notre UI)
+            if (node.closest?.('[data-radix-portal]') || node.closest?.('[role="dialog"]')) continue;
+            try {
+              const cs = window.getComputedStyle(node);
+              const zi = parseInt(cs.zIndex || '0', 10);
+              if ((cs.position === 'fixed' || cs.position === 'absolute') && zi > 999) {
+                const r = node.getBoundingClientRect();
+                if (r.width > window.innerWidth * 0.2 && r.height > window.innerHeight * 0.2) {
+                  node.remove();
                 }
-              } catch (_) {}
-            }
+              }
+            } catch (_) {}
           }
-        } catch (_) {}
+        }
       });
       observer.observe(document.body, { childList: true, subtree: true });
       cleanups.push(() => observer.disconnect());
     } catch (_) {}
 
+    // postMessage
     try {
-      // 6. postMessage
-      const BAD_MSG = ['popup','popunder','ad_click','openurl','open_url','newwindow','click_url','adurl','navigate_to'];
+      const BAD_MSG = ['popup','popunder','ad_click','openurl','open_url','newwindow','click_url','adurl'];
       const handleMsg = (e: MessageEvent) => {
         try {
           const c = (typeof e.data === 'string' ? e.data : JSON.stringify(e.data ?? '')).toLowerCase();
@@ -114,29 +68,25 @@ const AdBlocker: React.FC = () => {
       cleanups.push(() => window.removeEventListener('message', handleMsg, true));
     } catch (_) {}
 
+    // Garde URL — filet de sécurité final
     try {
-      // 7. Blur trick
-      const refocus = () => { try { setTimeout(() => window.focus(), 50); } catch (_) {} };
-      window.addEventListener('blur', refocus, true);
-      cleanups.push(() => window.removeEventListener('blur', refocus, true));
-    } catch (_) {}
-
-    try {
-      // 8. Garde URL
-      let lastHref = window.location.href;
+      const own = window.location.origin;
+      let last = window.location.href;
       const guard = setInterval(() => {
         try {
           const cur = window.location.href;
-          if (cur !== lastHref) {
-            if (isExternal(cur)) history.back();
-            else lastHref = cur;
+          if (cur !== last) {
+            try {
+              if (new URL(cur).origin !== own) history.back();
+              else last = cur;
+            } catch { history.back(); }
           }
         } catch (_) {}
       }, 200);
       cleanups.push(() => clearInterval(guard));
     } catch (_) {}
 
-    return () => { cleanups.forEach(fn => { try { fn(); } catch (_) {} }); };
+    return () => cleanups.forEach(fn => { try { fn(); } catch (_) {} });
   }, []);
 
   return null;

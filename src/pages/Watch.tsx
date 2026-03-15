@@ -73,25 +73,14 @@ const Watch: React.FC = () => {
 
   const getWatchUrl = () => {
     if (!media) return '';
-
-    const fill = (template: string) => {
-      // Décoder l'URL proxy si besoin, remplacer les tokens, puis ré-encoder
-      if (template.startsWith('/proxy?url=')) {
-        const inner = decodeURIComponent(template.replace('/proxy?url=', ''));
-        const filled = inner
-          .replace('{tmdb_id}', id || '')
-          .replace('{season_number}', selectedSeason.toString())
-          .replace('{episode_number}', selectedEpisode.toString());
-        return '/proxy?url=' + encodeURIComponent(filled);
-      }
-      return template
+    if (type === 'movie') {
+      return provider.movieUrl.replace('{tmdb_id}', id || '');
+    } else {
+      return provider.tvUrl
         .replace('{tmdb_id}', id || '')
         .replace('{season_number}', selectedSeason.toString())
         .replace('{episode_number}', selectedEpisode.toString());
-    };
-
-    if (type === 'movie') return fill(provider.movieUrl);
-    return fill(provider.tvUrl);
+    }
   };
 
   const watchUrl = getWatchUrl();

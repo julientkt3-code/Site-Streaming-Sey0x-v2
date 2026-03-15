@@ -3,43 +3,101 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    
     <title>Sey0x - Watch Free Movies and TV Shows Online in HD</title>
-    <meta name="description" content="Stream the latest movies and TV shows for free on Sey0x. Enjoy unlimited HD entertainment with no subscription required. Watch anytime, anywhere!" />
-    <meta name="keywords" content="free movies, free TV shows, online streaming, watch movies online, HD movies, free entertainment, Sey0x" />
-    <meta name="author" content="Sey0x" />
-    
-    <meta property="og:type" content="website" />
-    <meta property="og:title" content="Sey0x - Watch Free Movies and TV Shows Online in HD" />
-    <meta property="og:description" content="Stream the latest movies and TV shows for free on Sey0x. Enjoy unlimited HD entertainment with no subscription required. Watch anytime, anywhere!" />
-    <meta property="og:image" content="https://www.yourwebsite.com/og-image.png" />
-    <meta property="og:url" content="https://www.yourwebsite.com" />
-    
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Sey0x - Watch Free Movies and TV Shows Online in HD" />
-    <meta name="twitter:description" content="Stream the latest movies and TV shows for free on Sey0x. Enjoy unlimited HD entertainment with no subscription required. Watch anytime, anywhere!" />
-    <meta name="twitter:image" content="https://www.yourwebsite.com/og-image.png" />
-    
+    <meta name="description" content="Stream the latest movies and TV shows for free on Sey0x." />
+
+    <!-- ═══════════════════════════════════════════════════════
+         ANTI-POPUP — exécuté EN PREMIER, avant tout le reste
+         Bloque window.open au niveau le plus bas possible
+         ═══════════════════════════════════════════════════════ -->
+    <script>
+    (function() {
+      'use strict';
+
+      // 1. Écraser window.open définitivement et le rendre non-configurable
+      try {
+        Object.defineProperty(window, 'open', {
+          value: function() { return null; },
+          writable: false,
+          configurable: false
+        });
+      } catch(e) {
+        window.open = function() { return null; };
+      }
+
+      // 2. Bloquer les schémas d'app mobile
+      var BAD = ['intent:','market:','android-app:','ios-app:','itms-apps:','itms:','fb:','callto:','geo:','whatsapp:','tg:','viber:'];
+
+      // 3. Intercepter TOUS les clics sur des liens
+      document.addEventListener('click', function(e) {
+        var el = e.target;
+        while(el && el.tagName !== 'A') el = el.parentElement;
+        if(!el) return;
+        var href = el.href || '';
+        var target = el.target || '';
+        if(target === '_blank' || target === '_new' || BAD.some(function(s){ return href.toLowerCase().indexOf(s) === 0; })) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      }, true);
+
+      // 4. Même chose sur mobile
+      document.addEventListener('touchend', function(e) {
+        var el = e.target;
+        while(el && el.tagName !== 'A') el = el.parentElement;
+        if(!el) return;
+        var href = el.href || '';
+        var target = el.target || '';
+        if(target === '_blank' || target === '_new' || BAD.some(function(s){ return href.toLowerCase().indexOf(s) === 0; })) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      }, true);
+
+      // 5. Quand la page perd le focus (signe qu'une popup s'est ouverte)
+      //    on refocus immédiatement
+      var _lastFocus = Date.now();
+      window.addEventListener('focus', function() { _lastFocus = Date.now(); });
+      window.addEventListener('blur', function() {
+        // Si le blur arrive dans les 2 secondes après le dernier focus = popup
+        setTimeout(function() { try { window.focus(); } catch(e){} }, 100);
+      });
+
+      // 6. Surveiller visibilitychange — quand on revient sur la page
+      //    après une navigation forcée
+      document.addEventListener('visibilitychange', function() {
+        if(document.visibilityState === 'visible') {
+          try { window.focus(); } catch(e){}
+        }
+      });
+
+      // 7. Bloquer beforeunload
+      window.addEventListener('beforeunload', function(e) {
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
+      }, true);
+
+      // 8. Patch history pour bloquer navigations externes
+      var _ownOrigin = window.location.origin;
+      var _isExt = function(url) {
+        if(!url) return false;
+        try {
+          if(url.startsWith('/') || url.startsWith('#') || url.startsWith(_ownOrigin)) return false;
+          return new URL(url).origin !== _ownOrigin;
+        } catch(e) { return BAD.some(function(s){ return url.toLowerCase().indexOf(s)===0; }); }
+      };
+      var _origPush = history.pushState.bind(history);
+      var _origReplace = history.replaceState.bind(history);
+      history.pushState = function(s,t,url) { if(!_isExt(url)) _origPush(s,t,url); };
+      history.replaceState = function(s,t,url) { if(!_isExt(url)) _origReplace(s,t,url); };
+
+    })();
+    </script>
   </head>
 
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    
-    <script type="application/ld+json">
-      {
-        "@context": "https://schema.org",
-        "@type": "Website",
-        "name": "Sey0x",
-        "url": "https://www.yourwebsite.com",
-        "description": "Stream the latest movies and TV shows for free on HaloStream. Enjoy unlimited HD entertainment with no subscription required.",
-        "image": "https://www.yourwebsite.com/og-image.png",
-        "potentialAction": {
-          "@type": "SearchAction",
-          "target": "https://www.yourwebsite.com/search?q={search_term_string}",
-          "query-input": "required name=search_term_string"
-        }
-      }
-    </script>
   </body>
 </html>
