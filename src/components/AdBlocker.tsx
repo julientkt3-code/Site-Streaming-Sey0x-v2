@@ -21,31 +21,19 @@ const isExternal = (url: string): boolean => {
   } catch { return true; }
 };
 
-const AD_HOSTS = [
-  'doubleclick','googlesyndication','adnxs','rubiconproject','pubmatic',
-  'openx','criteo','taboola','outbrain','exoclick','propellerads',
-  'trafficjunky','popcash','popads','adcash','realsrv','adtng',
-  'clickadu','hilltopads','adsterra','admaven','bidvertiser',
-];
-const isAdSrc = (src: string) => {
-  try { const h = new URL(src).hostname; return AD_HOSTS.some(d => h.includes(d)); }
-  catch { return false; }
-};
-
 const AdBlocker: React.FC = () => {
   useEffect(() => {
-    // Tout dans un gros try/catch — si quelque chose crash, ça ne tue pas React
     const cleanups: (() => void)[] = [];
 
     try {
-      // 1. window.open
+      // 1. window.open → null (pour les scripts de notre page)
       const origOpen = window.open;
       window.open = () => null;
       cleanups.push(() => { window.open = origOpen; });
     } catch (_) {}
 
     try {
-      // 2. Bloquer liens <a> externes — UNIQUEMENT les <a>, pas les taps sur iframe
+      // 2. Bloquer liens <a> externes
       const blockLink = (e: Event) => {
         try {
           const a = (e.target as HTMLElement).closest('a') as HTMLAnchorElement | null;
@@ -66,9 +54,9 @@ const AdBlocker: React.FC = () => {
     } catch (_) {}
 
     try {
-      // 3. history push/replace
-      const origPush     = history.pushState.bind(history);
-      const origReplace  = history.replaceState.bind(history);
+      // 3. history
+      const origPush    = history.pushState.bind(history);
+      const origReplace = history.replaceState.bind(history);
       history.pushState    = (s, t, url?: string | URL | null) => { if (!url || !isExternal(url.toString())) origPush(s, t, url); };
       history.replaceState = (s, t, url?: string | URL | null) => { if (!url || !isExternal(url.toString())) origReplace(s, t, url); };
       cleanups.push(() => { history.pushState = origPush; history.replaceState = origReplace; });
@@ -82,24 +70,12 @@ const AdBlocker: React.FC = () => {
     } catch (_) {}
 
     try {
-      // 5. createElement('a') programmatique
-      const origCreate = document.createElement.bind(document);
-      (document as any).createElement = (tag: string, ...args: any[]) => {
-        const el = origCreate(tag, ...args);
-        if (tag.toLowerCase() === 'a') {
-          const origClick = el.click.bind(el);
-          (el as any).click = () => {
-            const a = el as HTMLAnchorElement;
-            if (!isExternal(a.href) && a.target !== '_blank') origClick();
-          };
-        }
-        return el;
-      };
-      cleanups.push(() => { (document as any).createElement = origCreate; });
-    } catch (_) {}
+      // 5. MutationObserver — overlays pub
+      const AD_HOSTS = ['doubleclick','googlesyndication','adnxs','rubiconproject','pubmatic',
+        'openx','criteo','taboola','outbrain','exoclick','propellerads','trafficjunky',
+        'popcash','popads','adcash','realsrv','adtng','clickadu','hilltopads','adsterra'];
+      const isAdSrc = (src: string) => { try { const h = new URL(src).hostname; return AD_HOSTS.some(d => h.includes(d)); } catch { return false; } };
 
-    try {
-      // 6. MutationObserver — supprimer iframes/overlays pub injectés
       const observer = new MutationObserver((mutations) => {
         try {
           for (const m of mutations) {
@@ -126,7 +102,7 @@ const AdBlocker: React.FC = () => {
     } catch (_) {}
 
     try {
-      // 7. postMessage
+      // 6. postMessage
       const BAD_MSG = ['popup','popunder','ad_click','openurl','open_url','newwindow','click_url','adurl','navigate_to'];
       const handleMsg = (e: MessageEvent) => {
         try {
@@ -139,14 +115,14 @@ const AdBlocker: React.FC = () => {
     } catch (_) {}
 
     try {
-      // 8. Blur trick
+      // 7. Blur trick
       const refocus = () => { try { setTimeout(() => window.focus(), 50); } catch (_) {} };
       window.addEventListener('blur', refocus, true);
       cleanups.push(() => window.removeEventListener('blur', refocus, true));
     } catch (_) {}
 
     try {
-      // 9. Garde URL — filet de sécurité
+      // 8. Garde URL
       let lastHref = window.location.href;
       const guard = setInterval(() => {
         try {

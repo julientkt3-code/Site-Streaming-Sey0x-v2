@@ -129,6 +129,8 @@ const Watch: React.FC = () => {
               frameBorder="0"
               allowFullScreen
               title={title}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-pointer-lock allow-fullscreen"
+              allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
             ></iframe>
           </div>
         </div>
