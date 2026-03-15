@@ -49,7 +49,7 @@ const Navbar: React.FC = () => {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex items-center">
-              <span className="text-2xl font-extrabold tracking-tighter text-white animate-fade-in">HaloStream</span>
+              <span className="text-2xl font-extrabold tracking-tighter text-white animate-fade-in">Sey0x</span>
             </Link>
           </div>
 

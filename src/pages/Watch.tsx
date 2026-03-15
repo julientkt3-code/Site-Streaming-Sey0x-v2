@@ -5,6 +5,7 @@ import Navbar from '@/components/Navbar';
 import { getMediaDetails, MediaDetails, getSeasonDetails, Episode } from '@/utils/api';
 import { Provider, getDefaultProvider } from '@/utils/providers';
 import ProviderSelector from '@/components/ProviderSelector';
+import AutoServerButton from '@/components/AutoServerButton';
 import { Button } from '@/components/ui/button';
 import { 
   ArrowLeft, 
@@ -129,6 +130,14 @@ const Watch: React.FC = () => {
               allowFullScreen
               title={title}
             ></iframe>
+
+            {/* Bouton serveur suivant — discret, en bas à droite du player */}
+            <div className="absolute bottom-3 right-3 z-10">
+              <AutoServerButton
+                currentProvider={provider}
+                onProviderChange={setProvider}
+              />
+            </div>
           </div>
         </div>
         
