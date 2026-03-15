@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: halostream
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
