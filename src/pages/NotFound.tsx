@@ -1,5 +1,5 @@
+import React, { useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
-import { useEffect } from "react";
 import { Home, ArrowLeft } from "lucide-react";
 
 const NotFound = () => {
